@@ -1,0 +1,15 @@
+# Creating groups
+#group1: 2NR + 10 R
+group1 = dataframe[dataframe['device label'].isin(['D', 'C', 'N', 'E', 'M', 'R', 'U', 'B', 'A', 'L', 'V', 'I'])]
+
+#group2: 3NR + all 17 R 
+group2 = dataframe[dataframe['device label'].isin(['G', 'H', 'Q',   'W', 'J', 'S', 'X', 'T', 'K', 'O', 'N', 'E', 'M', 'R', 'U', 'B', 'A', 'L', 'V', 'I'])]
+
+#group3: all 17 R
+group3 = dataframe[dataframe['device label'].isin(['W', 'J', 'S', 'X', 'T', 'K', 'O', 'N', 'E', 'M', 'R', 'U', 'B', 'A', 'L', 'V', 'I'])]
+
+#group4: all 10 R
+group4 = dataframe[dataframe['device label'].isin(['W', 'J', 'S', 'T', 'K', 'O', 'N', 'E',  'R', 'B', 'A', 'L', 'V', 'I'])]
+
+#group5: all R and all NR #22
+group5 = group4 = dataframe[dataframe['device label'].isin(['W', 'J', 'S', 'X', 'T', 'K', 'O', 'N', 'E', 'M', 'R', 'U', 'B', 'A', 'L', 'V', 'I', 'G', 'H', 'Q', 'D', 'C' ])]
