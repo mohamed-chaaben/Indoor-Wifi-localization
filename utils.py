@@ -1,3 +1,5 @@
+import time
+import mlflow
 import numpy as np
 from kneed import KneeLocator
 from sklearn.neighbors import NearestNeighbors
@@ -80,25 +82,24 @@ def dictionary_encoding(dictionary: dict) -> float:
     return total_sum
 
 class EpsEstimation:
-    def __init__(self, X, min_points:int, method:str='method1', show_plot:bool=False, metric:str='minkowski', ):
+    def __init__(self, X, min_points:int, show_plot:bool=False, metric:str='precomputed'):
         self.X = X
         self.min_points = min_points
         self.show_plot = show_plot
         self.distances_desc = None
-        self.method = method
         self.metric = metric
-        self.pairwise_matrix_path = 'pairwise_matrix.npy'
+        self.pairwise_matrix_path = 'pairwise_matrix.npz'
         self.input = X
         if self.metric == 'precomputed':
             import os
             if os.path.exists(self.pairwise_matrix_path):
-                self.input = np.load(self.pairwise_matrix_path, mmap_mode='r')
+                self.input = np.load(self.pairwise_matrix_path)['arr_0']
             else:
                 import time
                 t0 = time.time()
                 self.input = hamming_distance(self.X)
                 print("Pairwise matrix loaded in ", time.time()-t0)
-                np.save(self.pairwise_matrix_path, self.input)
+                np.savez_compressed(self.pairwise_matrix_path, self.input)
         self.knee = None
         self.knees = None
     
@@ -108,18 +109,19 @@ class EpsEstimation:
         self.distances_desc = sorted(distances[:, - 1], reverse=True)
         return self.find_knee()
 
+        
 
     def plot(self):
         import plotly.express as px
         px.line(x=list(range(1, len(self.distances_desc) + 1)), y=self.distances_desc).show()
         
 
-    def find_knee(self, s=0.8):
+    def find_knee(self, s=1):
         kneedle = KneeLocator(range(1, len(self.distances_desc)+1), self.distances_desc, S=s, curve='convex', direction='decreasing')
         self.knee = kneedle.knee
         self.knees = kneedle.all_knees
         return self.distances_desc[kneedle.knee]
-    
+
 
 def perform_pca(standardized_data, target_cumulative_variance=0.85) -> pd.DataFrame:
     """
@@ -163,10 +165,18 @@ class Clustering():
             self.algorithm = 'OPTICS'
         
         self.metric = metric
-        
+        self.pairwise_matrix_path = 'pairwise_matrix.npz'
         self.input = dataframe
         if self.metric == 'precomputed':
-            self.input = hamming_distance(self.df)
+            import os
+            if os.path.exists(self.pairwise_matrix_path):
+                self.input = np.load(self.pairwise_matrix_path)['arr_0']
+            else:
+                import time
+                t0 = time.time()
+                self.input = hamming_distance(self.df)
+                print("Pairwise matrix created in ", time.time()-t0)
+                np.savez_compressed(self.pairwise_matrix_path, self.input)
             
         # Metrics
         self.number_of_clusters = None
@@ -195,7 +205,7 @@ class Clustering():
         num_clusters = len(np.unique(self.cls.labels_))
         y_ax_lower, y_ax_upper = 0, 0
         y_ticks = []
-        fig, ax = plt.subplots(figsize=(6, 10))
+        fig, ax = plt.subplots(figsize=(3, 5))
         
         for cls in np.unique(self.cls.labels_):
             cls_silhouette_vals = self.silhouette_values[self.cls.labels_ == cls]
@@ -228,9 +238,10 @@ class Clustering():
         ax.set_ylabel("Cluster Id")
         ax.set_yticks(y_ticks)
         ax.set_yticklabels(np.unique(self.cls.labels_) + 1)
-
-        plt.show()
-        
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        plot_fname = f"silhouette_plot_{timestamp}.pdf"
+        mlflow.log_figure(fig, plot_fname)
+        plt.close(fig) 
 
     @property
     def results(self):
