@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.metrics import homogeneity_completeness_v_measure, silhouette_score, silhouette_samples
 from sklearn.cluster import DBSCAN
 import matplotlib.pyplot as plt
+plt.rcParams['font.family'] = 'FreeSerif'
 
 class Data:
     def __init__(self, features:list, subgroup=None,  scaler='std', path='all_dataframeV2.csv', drop_duplicates=False):
@@ -22,6 +23,7 @@ class Data:
         if drop_duplicates:
             self.df = self.df.drop_duplicates()
             self.df = self.df.reset_index(drop=True)
+        
         self.X = self.df[features].fillna(0)
         self.labels = self.df['device_label']
         if self.scaler == 'std':
@@ -88,18 +90,10 @@ class EpsEstimation:
         self.show_plot = show_plot
         self.distances_desc = None
         self.metric = metric
-        self.pairwise_matrix_path = 'pairwise_matrix.npz'
+        self.pairwise_matrix_path = 'pairwise_matrix.npy'
         self.input = X
         if self.metric == 'precomputed':
-            import os
-            if os.path.exists(self.pairwise_matrix_path):
-                self.input = np.load(self.pairwise_matrix_path)['arr_0']
-            else:
-                import time
-                t0 = time.time()
-                self.input = hamming_distance(self.X)
-                print("Pairwise matrix loaded in ", time.time()-t0)
-                np.savez_compressed(self.pairwise_matrix_path, self.input)
+            self.input = hamming_distance(self.X) 
         self.knee = None
         self.knees = None
     
@@ -113,7 +107,15 @@ class EpsEstimation:
 
     def plot(self):
         import plotly.express as px
-        px.line(x=list(range(1, len(self.distances_desc) + 1)), y=self.distances_desc).show()
+        from plotly.io import write_html
+        import os
+        fig = px.line(x=list(range(1, len(self.distances_desc) + 1)), y=self.distances_desc)
+        
+        eps_html_path = "eps_plot.html"
+        write_html(fig, eps_html_path)
+
+        mlflow.log_artifact(eps_html_path)
+        os.remove(eps_html_path)
         
 
     def find_knee(self, s=1):
@@ -165,18 +167,10 @@ class Clustering():
             self.algorithm = 'OPTICS'
         
         self.metric = metric
-        self.pairwise_matrix_path = 'pairwise_matrix.npz'
+        self.pairwise_matrix_path = 'pairwise_matrix.npy'
         self.input = dataframe
         if self.metric == 'precomputed':
-            import os
-            if os.path.exists(self.pairwise_matrix_path):
-                self.input = np.load(self.pairwise_matrix_path)['arr_0']
-            else:
-                import time
-                t0 = time.time()
-                self.input = hamming_distance(self.df)
-                print("Pairwise matrix created in ", time.time()-t0)
-                np.savez_compressed(self.pairwise_matrix_path, self.input)
+            self.input = hamming_distance(self.df)
             
         # Metrics
         self.number_of_clusters = None
@@ -190,6 +184,8 @@ class Clustering():
 
         
     def fit(self):
+        print('DBSCAN starting now')
+        t0 = time.time()
         self.cls = self.algorithm(eps=self.eps, min_samples=self.min_points, n_jobs=-1, metric=self.metric).fit(self.input)
         self.homogeneity, self.completeness, self.v_measure = homogeneity_completeness_v_measure(self.labels, self.cls.labels_)
         self.avg_silhouette = silhouette_score(self.input,  self.cls.labels_, metric='precomputed')
@@ -198,6 +194,7 @@ class Clustering():
         outliers_indices = np.where(self.cls.labels_ == -1)[0]
         self.number_of_outliers = len(outliers_indices)
         self.outliers = self.df[outliers_indices]
+        print('DBSCAN is done in ', time.time() - t0)
 
     
     def plot(self):
@@ -205,7 +202,7 @@ class Clustering():
         num_clusters = len(np.unique(self.cls.labels_))
         y_ax_lower, y_ax_upper = 0, 0
         y_ticks = []
-        fig, ax = plt.subplots(figsize=(3, 5))
+        fig, ax = plt.subplots(figsize=(4, 6))
         
         for cls in np.unique(self.cls.labels_):
             cls_silhouette_vals = self.silhouette_values[self.cls.labels_ == cls]
@@ -241,7 +238,8 @@ class Clustering():
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         plot_fname = f"silhouette_plot_{timestamp}.pdf"
         mlflow.log_figure(fig, plot_fname)
-        plt.close(fig) 
+        #plt.savefig(plot_fname)
+        plt.close(fig)
 
     @property
     def results(self):
