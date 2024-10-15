@@ -15,7 +15,7 @@ class Data:
     def __init__(self, features:list, subgroup=None,  scaler='std', path='all_dataframeV2.csv', drop_duplicates=False):
         self.path = path
         self.scaler = scaler
-        self.df = pd.read_csv(path, index_col=0)
+        self.df = pd.read_csv(path, index_col=0, nrows=50000)
         self.features = features + ['device_label']
         if isinstance(subgroup, list):
             self.df = self.df[self.df['device_label'].isin(subgroup)]
@@ -93,9 +93,9 @@ class EpsEstimation:
         self.pairwise_matrix_path = 'pairwise_matrix.npy'
         self.input = X
         if self.metric == 'precomputed':
-            self.input = hamming_distance(self.X) 
+            self.input = hamming_distance(self.X)
         self.knee = None
-        self.knees = None
+        self.knees = None # Number of knees
     
 
     def fit(self):
@@ -171,6 +171,9 @@ class Clustering():
         self.input = dataframe
         if self.metric == 'precomputed':
             self.input = hamming_distance(self.df)
+            self.silhouette_metric = 'precomputed'
+        else:
+            self.silhouette_metric = 'euclidean'
             
         # Metrics
         self.number_of_clusters = None
@@ -188,13 +191,16 @@ class Clustering():
         t0 = time.time()
         self.cls = self.algorithm(eps=self.eps, min_samples=self.min_points, n_jobs=-1, metric=self.metric).fit(self.input)
         self.homogeneity, self.completeness, self.v_measure = homogeneity_completeness_v_measure(self.labels, self.cls.labels_)
-        self.avg_silhouette = silhouette_score(self.input,  self.cls.labels_, metric='precomputed')
-        self.silhouette_values = silhouette_samples(self.input, self.cls.labels_, metric='precomputed') 
-        self.number_of_clusters = len(set(self.cls.labels_))    
+        self.avg_silhouette = silhouette_score(self.input,  self.cls.labels_, metric=self.silhouette_metric)
+        self.silhouette_values = silhouette_samples(self.input, self.cls.labels_, metric=self.silhouette_metric) 
+        self.number_of_clusters = len(set(self.cls.labels_))
         outliers_indices = np.where(self.cls.labels_ == -1)[0]
         self.number_of_outliers = len(outliers_indices)
         self.outliers = self.df[outliers_indices]
         print('DBSCAN is done in ', time.time() - t0)
+        mlflow.log_metric("number_of_clusters", self.number_of_clusters)
+        mlflow.log_metric("number_of_outliers", self.number_of_outliers)
+
 
     
     def plot(self):
@@ -232,9 +238,13 @@ class Clustering():
         ax.text(silhouette_avg + 0.025, 0.5 * (y_ax_lower + y_ax_upper), f'Average: {silhouette_avg:.2f}',
                 color="red", verticalalignment='center')
         ax.set_xlabel("Silhouette Coefficient")
-        ax.set_ylabel("Cluster Id")
+        #ax.set_ylabel("Cluster Id")
+
+
         ax.set_yticks(y_ticks)
-        ax.set_yticklabels(np.unique(self.cls.labels_) + 1)
+        #ax.set_yticklabels([np.unique(self.cls.labels_) + 1])
+        ax.set_yticklabels([])
+        plt.tight_layout(pad=2.0) # To prevent image to be cut in some parts
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         plot_fname = f"silhouette_plot_{timestamp}.pdf"
         mlflow.log_figure(fig, plot_fname)
